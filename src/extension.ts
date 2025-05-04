@@ -209,7 +209,10 @@ export class DeepSeekPanel {
                     });
                     break;
                 case "estimateTokens":
-                    this._handleEstimateTokens();
+                    this._handleEstimateTokens(
+                        message.text,
+                        message.historyCount
+                    );
                     break;
                 case "sendRequest":
                     this._handleSendRequest(message.text, message.historyCount);
@@ -289,21 +292,23 @@ export class DeepSeekPanel {
         }
     }
 
-    private async _handleEstimateTokens() {
-        if (!this._selectedFiles.length) {
-            this._panel.webview.postMessage({
-                command: "showTokenEstimate",
-                estimate: "No files selected",
-            });
-            return;
-        }
-
-        const totalTokens = Math.floor(
-            this._selectedFiles.reduce(
-                (sum, file) => sum + file.content.length,
-                0
-            ) * 0.3
+    private async _handleEstimateTokens(text: string, historyCount: number) {
+        let totalTokens = Math.floor(
+            text.length * 0.3 +
+                this._selectedFiles.reduce(
+                    (sum, file) => sum + file.content.length,
+                    0
+                ) *
+                    0.3
         );
+
+        if (this._currentConversation && historyCount > 0) {
+            totalTokens += Math.floor(
+                this._currentConversation.messages
+                    .slice(-historyCount)
+                    .reduce((sum, msg) => sum + msg.content.length, 0) * 0.3
+            );
+        }
 
         this._panel.webview.postMessage({
             command: "showTokenEstimate",
@@ -361,12 +366,14 @@ export class DeepSeekPanel {
                     content:
                         "You are an expert programming assistant. When providing code examples, always use markdown code blocks with language tags.",
                 },
-                ...this._currentConversation.messages
-                    .slice(-historyCount)
-                    .map((msg) => ({
-                        role: msg.role,
-                        content: msg.content,
-                    })),
+                ...(historyCount > 0
+                    ? this._currentConversation.messages
+                          .slice(-historyCount)
+                          .map((msg) => ({
+                              role: msg.role,
+                              content: msg.content,
+                          }))
+                    : []),
                 {
                     role: "user",
                     content: `${text}\n\n### Relevant Code Files:\n${formattedFiles}`,
