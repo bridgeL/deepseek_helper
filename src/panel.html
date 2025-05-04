@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'none';
+        script-src 'unsafe-inline' vscode-resource:;
+        style-src 'unsafe-inline' vscode-resource:;
+        font-src vscode-resource:;
+        img-src vscode-resource:;
+    ">
+    <title>DeepSeek Analysis</title>
+    <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+    <div class="header">
+        <div class="left-controls">
+            <button id="toggleHistory" class="toggle-history">☰ History</button>
+            <button id="newConversation" class="secondary">+ New</button>
+            <button id="toggleControls" class="control-toggle">
+                <span class="icon">▼</span> Controls
+            </button>
+        </div>
+        <h1>DeepSeek Analysis</h1>
+    </div>
+    
+    <div class="conversation-history" id="conversationHistory">
+        <div class="history-header">
+            <span>Conversation History</span>
+        </div>
+        <div class="conversation-list" id="conversationList"></div>
+    </div>
+    
+    <div class="response-container" id="responseContainer"></div>
+    
+    <div class="controls-container" id="controlsContainer">
+        <div class="controls-content">
+            <div class="file-controls">
+                <div class="exclude-dirs">
+                    <label for="excludeDirs">Exclude directories:</label>
+                    <input type="text" id="excludeDirs" placeholder="node_modules build dist">
+                </div>
+                
+                <div class="file-types-input">
+                    <label for="fileTypes">File types (space separated):</label>
+                    <input type="text" id="fileTypes" value=".js .html .css">
+                </div>
+                
+                <div class="history-controls">
+                    <label for="historyCount">History:</label>
+                    <select id="historyCount" class="history-count">
+                        <option value="0">0</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="5" selected>5</option>
+                        <option value="10">10</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="input-area">
+                <textarea id="userInput" placeholder="Describe your coding problem..."></textarea>
+            </div>
+            
+            <div class="action-buttons">
+                <button id="selectFiles">Select Files</button>
+                <button id="estimateTokens">Estimate Tokens</button>
+                <button id="sendRequest">Send to DeepSeek</button>
+            </div>
+            
+            <div id="fileList" class="file-list">
+                <div id="filesContainer"></div>
+            </div>
+            
+            <div class="status" id="status"></div>
+        </div>
+    </div>
+
+    <script src="panel.js"></script>
+</body>
+</html>
