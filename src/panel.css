@@ -1,102 +1,87 @@
+/* ===== 基础样式 ===== */
 :root {
     --bg-color: #1e1e1e;
     --text-color: #e0e0e0;
-    --input-bg: #252526;
-    --button-bg: #0e639c;
-    --button-hover: #1177bb;
-    --button-secondary: #3a3d41;
-    --button-secondary-hover: #45494e;
-    --danger-color: #a1260d;
-    --danger-hover: #c1351b;
     --border-color: #444;
-    --history-bg: #2d2d2d;
-    --history-active: #3c3c3c;
+    --primary-color: #007acc;
+    --hover-color: #3e3e42;
+    --active-color: #0e639c;
+    --input-bg: #252526;
     --code-bg: #2d2d2d;
-    --status-bg: #252526;
+    --user-message-bg: #2b5278;
+    --assistant-message-bg: #37373d;
 }
 
-/* Base Styles */
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: var(--bg-color);
-    color: var(--text-color);
     margin: 0;
     padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+        Ubuntu, Cantarell, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
     height: 100vh;
-    display: flex;
-    flex-direction: column;
     overflow: hidden;
 }
 
-/* Header Styles */
+/* ===== 头部样式 ===== */
 .header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 50px;
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    padding: 10px 15px;
+    padding: 0 15px;
     background-color: var(--bg-color);
     border-bottom: 1px solid var(--border-color);
-    position: sticky;
-    top: 0;
     z-index: 100;
+}
+
+.header-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 500;
 }
 
 .left-controls {
     display: flex;
     gap: 8px;
-    margin-right: 15px;
-    align-items: center;
 }
 
-.header h1 {
-    margin: 0;
-    font-size: 1.2em;
-    font-weight: 500;
-    flex: 1;
-    text-align: center;
-}
-
-/* 新增控制按钮样式 */
-.control-toggle {
-    padding: 6px 12px;
-    background-color: var(--button-secondary);
+/* ===== 工具栏按钮 ===== */
+.toolbar-btn {
+    background-color: transparent;
+    border: 1px solid var(--border-color);
     color: var(--text-color);
-    border: none;
+    padding: 5px 10px;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 0.9em;
-    margin-left: 10px;
+    font-size: 13px;
     transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    gap: 6px;
 }
 
-.control-toggle:hover {
-    background-color: var(--button-secondary-hover);
+.toolbar-btn:hover {
+    background-color: var(--hover-color);
 }
 
-.control-toggle .icon {
-    font-size: 0.9em;
-    transition: transform 0.3s ease;
+.toolbar-btn:active {
+    background-color: var(--active-color);
 }
 
-.control-toggle.collapsed .icon {
-    transform: rotate(180deg);
-}
-
-/* History Panel */
+/* ===== 对话历史面板 ===== */
 .conversation-history {
     position: fixed;
     left: -300px;
     top: 50px;
     bottom: 0;
     width: 300px;
-    background-color: var(--history-bg);
+    background-color: var(--input-bg);
     border-right: 1px solid var(--border-color);
-    z-index: 90;
     transition: left 0.3s ease;
-    display: flex;
-    flex-direction: column;
+    z-index: 90;
+    overflow-y: auto;
 }
 
 .conversation-history.visible {
@@ -104,58 +89,36 @@ body {
 }
 
 .history-header {
-    display: flex;
-    align-items: center;
     padding: 10px 15px;
-    background-color: var(--history-bg);
     border-bottom: 1px solid var(--border-color);
-    position: sticky;
-    top: 0;
-    z-index: 1;
-}
-
-.history-header span {
-    flex: 1;
     font-weight: bold;
-    text-align: center;
 }
 
-/* Conversation List */
 .conversation-list {
-    overflow-y: auto;
-    flex: 1;
+    padding: 10px 0;
 }
 
 .conversation-item {
+    padding: 10px 15px;
+    cursor: pointer;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 15px;
-    border-bottom: 1px solid var(--border-color);
-    cursor: pointer;
-    transition: background-color 0.2s;
 }
 
 .conversation-item:hover {
-    background-color: var(--history-active);
+    background-color: var(--hover-color);
 }
 
 .conversation-item.active {
-    background-color: var(--history-active);
-}
-
-.conversation-item-content {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
+    background-color: var(--active-color);
 }
 
 .conversation-preview {
-    white-space: nowrap;
+    font-size: 13px;
+    color: #aaa;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 0.9em;
-    color: #999;
 }
 
 .conversation-item-actions {
@@ -168,243 +131,182 @@ body {
 }
 
 .delete-conversation {
-    color: #ff6b6b;
     background: none;
     border: none;
+    color: #f44336;
     cursor: pointer;
-    font-size: 1.2em;
+    font-size: 16px;
     padding: 0 5px;
-    line-height: 1;
 }
 
-.delete-conversation:hover {
-    color: #ff3b3b;
-}
-
-/* Main Content */
+/* ===== 主内容区 ===== */
 .response-container {
-    flex: 1;
+    margin-top: 50px;
     overflow-y: auto;
     padding: 15px;
     background-color: var(--bg-color);
+    transition: margin-right 0.3s ease;
+    height: calc(100vh - 80px);
 }
 
-/* Controls Panel */
-.controls-container {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background-color: var(--input-bg);
-    border-top: 1px solid var(--border-color);
-    z-index: 80;
-    transition: transform 0.3s ease;
-}
-
-.controls-container.collapsed {
-    transform: translateY(100%);
-}
-
-.controls-content {
-    padding: 15px;
-    max-height: 400px;
-    overflow-y: auto;
-}
-
-/* Form Elements */
-.file-controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 15px;
-    margin-bottom: 15px;
-}
-
-.exclude-dirs, 
-.file-types-input, 
-.history-controls {
-    flex: 1;
-    min-width: 200px;
-}
-
-label {
-    display: block;
-    margin-bottom: 5px;
-    font-size: 0.9em;
-    color: #aaa;
-}
-
-input[type="text"], 
-textarea, 
-select {
-    width: calc(100% - 20px);
-    padding: 8px;
-    background-color: var(--input-bg);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-family: inherit;
-}
-
-textarea {
-    min-height: 80px;
-    resize: vertical;
-}
-
-/* Buttons */
-button {
-    padding: 8px 15px;
-    background-color: var(--button-bg);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-family: inherit;
-    transition: background-color 0.2s;
-}
-
-button:hover {
-    background-color: var(--button-hover);
-}
-
-button.secondary {
-    background-color: var(--button-secondary);
-}
-
-button.secondary:hover {
-    background-color: var(--button-secondary-hover);
-}
-
-button.danger {
-    background-color: var(--danger-color);
-}
-
-button.danger:hover {
-    background-color: var(--danger-hover);
-}
-
-button.small {
-    padding: 2px 8px;
-    font-size: 0.8em;
-}
-
-.action-buttons {
-    display: flex;
-    gap: 10px;
-    margin-top: 15px;
-}
-
-/* File List */
-.file-list {
-    margin-top: 15px;
-    max-height: 150px;
-    overflow-y: auto;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 5px;
-    background-color: var(--input-bg);
-}
-
-.file-item {
-    padding: 5px;
-    font-family: 'Consolas', monospace;
-    font-size: 0.9em;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.file-item:last-child {
-    border-bottom: none;
-}
-
-/* Status */
-.status {
-    margin-top: 10px;
-    padding: 8px;
-    background-color: var(--status-bg);
-    border-radius: 4px;
-    font-size: 0.9em;
-    min-height: 18px;
-}
-
-/* Messages */
 .message-container {
-    margin-bottom: 15px;
+    margin-bottom: 20px;
 }
 
 .message {
-    position: relative;
+    border-radius: 6px;
     padding: 10px 15px;
-    border-radius: 4px;
-    max-width: 85%;
+    max-width: 80%;
+    position: relative;
 }
 
 .user-message {
-    background-color: var(--button-secondary);
+    background-color: var(--user-message-bg);
     margin-left: auto;
 }
 
 .assistant-message {
-    background-color: var(--history-bg);
+    background-color: var(--assistant-message-bg);
     margin-right: auto;
 }
 
 .message-content {
     white-space: pre-wrap;
-    word-break: break-word;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
     line-height: 1.5;
 }
 
-.message-content pre {
-    background-color: var(--code-bg);
-    border-radius: 4px;
-    padding: 12px;
-    overflow-x: auto;
-    margin: 8px 0;
-    tab-size: 4;
-}
-
-.message-content code {
-    font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 0.9em;
-}
-
-.message-content .code-block {
-    position: relative;
-    margin: 10px 0;
-}
-
-.message-content .code-block .lang-tag {
-    position: absolute;
-    top: 0;
-    right: 0;
-    background: rgba(255,255,255,0.1);
-    padding: 2px 8px;
-    font-size: 0.7em;
-    border-radius: 0 0 0 4px;
-    color: #999;
-}
-
 .message-time {
-    font-size: 0.7em;
+    font-size: 11px;
     color: #999;
     text-align: right;
     margin-top: 5px;
 }
 
-/* Scrollbars */
-::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+/* ===== 控制面板 ===== */
+.controls-container {
+    position: fixed;
+    top: 50px;
+    right: -450px;
+    bottom: 0;
+    width: 400px;
+    background-color: var(--input-bg);
+    border-left: 1px solid var(--border-color);
+    z-index: 80;
+    transition: right 0.3s ease;
+    overflow-y: auto;
+
+    display: flex;
+    flex-direction: column;
+    padding: 15px;
+
+    gap: 10px;
 }
 
-::-webkit-scrollbar-track {
-    background: var(--input-bg);
+.controls-container.visible {
+    right: 0;
 }
 
-::-webkit-scrollbar-thumb {
-    background: #555;
+.exclude-dirs,
+.file-types-input,
+.history-controls,
+.input-area {
+    display: flex;
+    flex-direction: column;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 13px;
+}
+
+input[type="text"],
+textarea,
+select {
+    padding: 8px;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
     border-radius: 4px;
+    font-family: inherit;
 }
 
-::-webkit-scrollbar-thumb:hover {
-    background: #666;
+textarea {
+    min-height: 100px;
+    resize: vertical;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    margin: 15px 0;
+}
+
+.action-buttons button {
+    flex: 1;
+    padding: 8px;
+    background-color: var(--primary-color);
+    border: none;
+    color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.action-buttons button:hover {
+    background-color: #0062a3;
+}
+
+.action-buttons button:active {
+    background-color: #00508c;
+}
+
+/* ===== 文件列表 ===== */
+#filesContainer {
+    border-top: 1px solid var(--border-color);
+    display: none;
+    height: 150px;
+    overflow-y: auto;
+}
+
+.file-item {
+    padding: 5px 0;
+    font-size: 13px;
+    border-bottom: 1px dashed var(--border-color);
+}
+
+/* ===== 状态显示 ===== */
+.status {
+    font-size: 13px;
+    color: #aaa;
+    min-height: 18px;
+}
+
+/* ===== 代码块样式 ===== */
+.code-block {
+    position: relative;
+    margin: 10px 0;
+}
+
+.code-block pre {
+    background-color: var(--code-bg);
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 13px;
+    margin: 0;
+}
+
+.code-block .lang-tag {
+    position: absolute;
+    top: 0;
+    right: 0;
+    background-color: var(--primary-color);
+    color: white;
+    padding: 2px 6px;
+    font-size: 11px;
+    border-radius: 0 4px 0 4px;
 }

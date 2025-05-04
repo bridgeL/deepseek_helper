@@ -1,10 +1,12 @@
-import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
-import OpenAI from 'openai';
-import { format } from 'date-fns';
-import { v4 as uuidv4 } from 'uuid';
+import * as vscode from "vscode";
+import * as path from "path";
+import * as fs from "fs";
+import dayjs from "dayjs";
+import { v4 as uuidv4 } from "uuid";
+import OpenAI from "openai";
+import { randomInt } from "crypto";
 
+// ===== 类型定义 =====
 interface Conversation {
     id: string;
     createdAt: number;
@@ -15,155 +17,107 @@ interface Conversation {
 }
 
 interface Message {
-    role: 'user' | 'assistant';
+    id: string;
+    role: "user" | "assistant";
     content: string;
     timestamp: number;
 }
 
-export function activate(context: vscode.ExtensionContext) {
-    context.subscriptions.push(
-        vscode.commands.registerCommand('deepseek.analyze', () => {
-            DeepSeekPanel.createOrShow(context);
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('deepseek.ds_key')) {
-                DeepSeekPanel.reload();
-            }
-        })
-    );
+interface WebviewMessage {
+    command: string;
+    [key: string]: any;
 }
 
-class DeepSeekPanel {
+// ===== 扩展主类 =====
+export class DeepSeekPanel {
     private static instance: DeepSeekPanel | undefined;
     private readonly _panel: vscode.WebviewPanel;
     private _disposables: vscode.Disposable[] = [];
     private _openai: OpenAI | null = null;
     private _context: vscode.ExtensionContext;
-    private _selectedFiles: Array<{path: string, content: string}> = [];
+    private _selectedFiles: Array<{ path: string; content: string }> = [];
     private _currentConversation: Conversation | null = null;
     private _conversations: Conversation[] = [];
+    private _currentRequest: AbortController | null = null;
 
-    public static createOrShow(context: vscode.ExtensionContext): DeepSeekPanel {
-        const column = vscode.window.activeTextEditor?.viewColumn || vscode.ViewColumn.One;
-        
+    // ===== 初始化 =====
+    public static createOrShow(context: vscode.ExtensionContext) {
+        const column =
+            vscode.window.activeTextEditor?.viewColumn || vscode.ViewColumn.One;
+
         if (DeepSeekPanel.instance) {
             DeepSeekPanel.instance._panel.reveal(column);
-            return DeepSeekPanel.instance;
+            return;
         }
 
         const panel = vscode.window.createWebviewPanel(
-            'deepseekView',
-            'DeepSeek Analysis',
+            "deepseekView",
+            "DeepSeek Analysis",
             column,
             {
                 enableScripts: true,
                 retainContextWhenHidden: true,
-                localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'src')]
+                localResourceRoots: [
+                    vscode.Uri.joinPath(context.extensionUri, "src"),
+                ],
             }
         );
 
         DeepSeekPanel.instance = new DeepSeekPanel(panel, context);
-        return DeepSeekPanel.instance;
     }
 
-    public static reload() {
-        if (DeepSeekPanel.instance) {
-            const config = vscode.workspace.getConfiguration('deepseek');
-            const apiKey = config.get<string>('ds_key');
-            DeepSeekPanel.instance._openai = apiKey ? new OpenAI({
-                baseURL: 'https://api.deepseek.com',
-                apiKey: apiKey
-            }) : null;
-        }
-    }
-
-    private constructor(panel: vscode.WebviewPanel, context: vscode.ExtensionContext) {
+    private constructor(
+        panel: vscode.WebviewPanel,
+        context: vscode.ExtensionContext
+    ) {
         this._panel = panel;
         this._context = context;
 
-        // Initialize API client
-        const config = vscode.workspace.getConfiguration('deepseek');
-        const apiKey = config.get<string>('ds_key');
-        if (apiKey) {
-            this._openai = new OpenAI({
-                baseURL: 'https://api.deepseek.com',
-                apiKey: apiKey
-            });
-        }
+        // 初始化API
+        this._initializeApiClient();
 
-        // Load conversation history
-        this._conversations = context.workspaceState.get('conversations', []);
+        // 加载对话历史
+        this._conversations = context.workspaceState.get<Conversation[]>(
+            "conversations",
+            []
+        );
         this._startNewConversation();
 
-        // Set webview content
+        // 设置Webview
         this._updateWebview();
 
-        // Handle messages from webview
+        // 消息处理
         this._panel.webview.onDidReceiveMessage(
-            async (message) => {
-                try {
-                    switch (message.command) {
-                        case 'newConversation':
-                            this._startNewConversation();
-                            this._updateWebview();
-                            break;
-                        case 'switchConversation':
-                            this._switchConversation(message.conversationId);
-                            this._updateWebview();
-                            break;
-                        case 'deleteConversation':
-                            await this._deleteConversation(message.conversationId);
-                            break;
-                        case 'estimateTokens':
-                            await this._handleEstimateTokens();
-                            break;
-                        case 'sendRequest':
-                            await this._handleSendRequest({
-                                text: message.text,
-                                excludeDirs: message.excludeDirs,
-                                historyCount: message.historyCount ? parseInt(message.historyCount) : 5
-                            });
-                            break;
-                        case 'selectFiles':
-                            await this._handleSelectFiles({
-                                fileTypes: message.fileTypes,
-                                excludeDirs: message.excludeDirs
-                            });
-                            break;
-                        case 'resizeWebview':
-                            this._resizePanel(message.collapsed);
-                            break;
-                    }
-                } catch (error) {
-                    this._panel.webview.postMessage({
-                        command: 'updateStatus',
-                        text: `Error: ${error instanceof Error ? error.message : String(error)}`
-                    });
-                }
-            },
+            this._handleWebviewMessage.bind(this),
             null,
             this._disposables
         );
 
+        // 清理
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
     }
 
-    private _resizePanel(collapsed: boolean) {
-        if (this._panel.viewColumn) {
-            setTimeout(() => {
-                this._panel.reveal(this._panel.viewColumn, true);
-            }, 200);
+    // ===== 核心方法 =====
+    private _initializeApiClient() {
+        const config = vscode.workspace.getConfiguration("deepseek");
+        const dsKey = config.get<string>("ds_key");
+
+        if (dsKey) {
+            this._openai = new OpenAI({
+                baseURL: "https://api.deepseek.com/v1",
+                apiKey: dsKey,
+            });
+            this._log("API client initialized");
+        } else {
+            this._log("No API key found in configuration");
         }
     }
 
     private _startNewConversation() {
-        // Clean empty conversations except current
-        this._conversations = this._conversations.filter(conv => 
-            conv.messages.length > 0 || 
-            conv.id === this._currentConversation?.id
+        this._conversations = this._conversations.filter(
+            (conv) =>
+                conv.messages.length > 0 ||
+                conv.id === this._currentConversation?.id
         );
 
         const conversationId = uuidv4();
@@ -172,178 +126,204 @@ class DeepSeekPanel {
             createdAt: Date.now(),
             lastActive: Date.now(),
             messages: [],
-            filePath: this._generateMarkdownPath(conversationId)
+            filePath: this._generateMarkdownPath(conversationId),
         };
         this._conversations.unshift(this._currentConversation);
         this._saveConversations();
+
+        this._log("New conversation started", { id: conversationId });
     }
 
-    private async _deleteConversation(conversationId: string) {
+    private updateConversation() {
+        console.log("Updating conversation in webview");
+        this._panel.webview.postMessage({
+            command: "updateConversation",
+            conversation: this._currentConversation,
+            history: this._getConversationHistory(),
+        });
+    }
+
+    private _handleNewConversation() {
+        this._startNewConversation();
+        this.updateConversation();
+        this._log("Created new conversation");
+    }
+
+    private async _handleDeleteConversation(conversationId: string) {
         const confirm = await vscode.window.showWarningMessage(
-            'Delete this conversation?',
+            "Delete this conversation?",
             { modal: true },
-            'Delete'
+            "Delete"
         );
 
-        if (confirm !== 'Delete') {
+        if (confirm !== "Delete") {
             return;
         }
 
-        // Delete associated markdown file
-        const conversation = this._conversations.find(c => c.id === conversationId);
+        const conversation = this._conversations.find(
+            (c) => c.id === conversationId
+        );
         if (conversation?.filePath && fs.existsSync(conversation.filePath)) {
             try {
                 fs.unlinkSync(conversation.filePath);
+                this._log("Deleted conversation file", {
+                    path: conversation.filePath,
+                });
             } catch (error) {
-                console.error('Failed to delete conversation file:', error);
+                this._log("Failed to delete conversation file", {
+                    error: this._errorToString(error),
+                    path: conversation.filePath,
+                });
             }
         }
 
-        // Update conversation list
-        this._conversations = this._conversations.filter(c => c.id !== conversationId);
-        
-        // If deleting current conversation, create new one
-        if (this._currentConversation?.id === conversationId) {
-            this._startNewConversation();
-        }
-        
-        this._saveConversations();
-        this._updateWebview();
-
-        this._panel.webview.postMessage({
-            command: 'updateStatus',
-            text: 'Conversation deleted'
-        });
-    }
-
-    private _switchConversation(conversationId: string) {
-        const conversation = this._conversations.find(c => c.id === conversationId);
-        if (conversation) {
-            this._currentConversation = conversation;
-            this._currentConversation.lastActive = Date.now();
-            this._saveConversations();
-        }
-    }
-
-    private _getConversationHistory() {
-        return this._conversations.map(c => ({
-            id: c.id,
-            createdAt: c.createdAt,
-            lastActive: c.lastActive,
-            preview: c.messages.length > 0 
-                ? c.messages[0].content.substring(0, 50) + (c.messages[0].content.length > 50 ? '...' : '')
-                : 'New conversation'
-        }));
-    }
-
-    private _saveConversations() {
-        // Filter out empty conversations except current
-        const conversationsToSave = this._conversations.filter(conv => 
-            conv.messages.length > 0 || 
-            conv.id === this._currentConversation?.id
+        this._conversations = this._conversations.filter(
+            (c) => c.id !== conversationId
         );
-        
-        this._context.workspaceState.update('conversations', conversationsToSave);
+        this._saveConversations();
+        this.updateConversation();
     }
 
-    private _generateMarkdownPath(conversationId: string): string {
-        const workspaceRoot = vscode.workspace.rootPath;
-        if (!workspaceRoot) return '';
-        
-        const outputDir = path.join(workspaceRoot, 'deepseek');
-        if (!fs.existsSync(outputDir)) {
-            fs.mkdirSync(outputDir);
-        }
-        
-        return path.join(outputDir, `${conversationId}.md`);
-    }
+    // 在 _handleWebviewMessage 方法中确保完整处理所有消息类型：
+    private _handleWebviewMessage(message: WebviewMessage) {
+        this._log("Received message", message);
 
-    private async _handleSelectFiles(params: {fileTypes: string[], excludeDirs?: string}) {
-        const { fileTypes, excludeDirs = '' } = params;
-        
-        if (!fileTypes || fileTypes.length === 0) {
-            this._panel.webview.postMessage({
-                command: 'updateStatus',
-                text: 'No file types selected'
+        try {
+            switch (message.command) {
+                case "init":
+                    this._handleSendInitialData();
+                    break;
+                case "newConversation":
+                    this._handleNewConversation();
+                    break;
+                case "switchConversation":
+                    this._handleSwitchConversation(message.conversationId);
+                    break;
+                case "deleteConversation":
+                    this._handleDeleteConversation(message.conversationId);
+                    break;
+                case "selectFiles":
+                    this._handleSelectFiles({
+                        fileTypes: message.fileTypes,
+                        excludeDirs: message.excludeDirs,
+                    });
+                    break;
+                case "estimateTokens":
+                    this._handleEstimateTokens();
+                    break;
+                case "sendRequest":
+                    this._handleSendRequest(message.text, message.historyCount);
+                    break;
+                case "log":
+                    this._handleFrontendLog(message);
+                    break;
+                default:
+                    this._log("Unknown message command", message);
+            }
+        } catch (error) {
+            this._log("Error handling message", {
+                error: this._errorToString(error),
+                message,
             });
+        }
+    }
+
+    private _handleSendInitialData() {
+        this.updateConversation();
+
+        this._log("Sent initial data to webview");
+    }
+
+    private _handleSwitchConversation(id: string) {
+        const targetConv = this._conversations.find((c) => c.id === id);
+        if (!targetConv) {
+            this._log("Conversation not found", { requestedId: id });
             return;
         }
 
-        this._panel.webview.postMessage({
-            command: 'updateStatus',
-            text: 'Collecting files...'
-        });
-
-        try {
-            this._selectedFiles = await this._collectFiles(fileTypes, excludeDirs);
-
-            this._panel.webview.postMessage({
-                command: 'updateFileList',
-                files: this._selectedFiles.map(f => f.path)
-            });
-        } catch (error) {
-            this._panel.webview.postMessage({
-                command: 'updateStatus',
-                text: `Failed to collect files: ${error instanceof Error ? error.message : String(error)}`
-            });
+        // 取消当前请求
+        if (this._currentRequest) {
+            this._currentRequest.abort();
+            this._log("Aborted pending request");
         }
+
+        this._currentConversation = targetConv;
+        this._currentConversation.lastActive = Date.now();
+
+        this.updateConversation();
+
+        this._log("Switched conversation", {
+            id,
+            messageCount: targetConv.messages.length,
+        });
     }
 
-    private async _collectFiles(fileTypes: string[], excludeDirs: string): Promise<Array<{path: string, content: string}>> {
-        const pattern = `**/*{${fileTypes.join(',')}}`;
-        const excludePattern = excludeDirs.split(' ')
-            .filter(Boolean)
-            .map(dir => `**/${dir}/**`)
-            .join(',');
-        
-        const uris = await vscode.workspace.findFiles(
-            pattern, 
-            `{${excludePattern},**/node_modules/**}`
-        );
+    // ===== 功能处理 =====
+    private async _handleSelectFiles(params: {
+        fileTypes: string[];
+        excludeDirs?: string;
+    }) {
+        try {
+            this._selectedFiles = await this._collectFiles(
+                params.fileTypes,
+                params.excludeDirs || ""
+            );
+            this._log("Selected files", {
+                count: this._selectedFiles.length,
+                data: this._selectedFiles.map((f) => f.path),
+            });
 
-        // Get files and sort by path
-        const files = await Promise.all(
-            uris.map(async uri => ({
-                path: vscode.workspace.asRelativePath(uri),
-                content: (await vscode.workspace.fs.readFile(uri)).toString()
-            }))
-        );
-
-        return files.sort((a, b) => 
-            a.path.localeCompare(b.path, undefined, { sensitivity: 'base' })
-        );
+            this._panel.webview.postMessage({
+                command: "updateFileList",
+                files: this._selectedFiles.map((f) => f.path),
+            });
+        } catch (error) {
+            this._log("Error selecting files", {
+                error: this._errorToString(error),
+                params,
+            });
+            this._panel.webview.postMessage({
+                command: "updateStatus",
+                text: `Failed to collect files: ${this._errorToString(error)}`,
+            });
+        }
     }
 
     private async _handleEstimateTokens() {
         if (!this._selectedFiles.length) {
             this._panel.webview.postMessage({
-                command: 'showTokenEstimate',
-                estimate: 'No files selected'
+                command: "showTokenEstimate",
+                estimate: "No files selected",
             });
             return;
         }
 
         const totalTokens = Math.floor(
-            this._selectedFiles.reduce((sum, file) => sum + file.content.length, 0) * 0.3
+            this._selectedFiles.reduce(
+                (sum, file) => sum + file.content.length,
+                0
+            ) * 0.3
         );
 
         this._panel.webview.postMessage({
-            command: 'showTokenEstimate',
-            estimate: `Estimated tokens: ${totalTokens}`
+            command: "showTokenEstimate",
+            estimate: `Estimated tokens: ${totalTokens}`,
         });
     }
 
-    private _formatFiles(files: Array<{path: string, content: string}>): string {
-        return files.map(f => `### ${f.path}\n\`\`\`\n${f.content}\n\`\`\``).join('\n\n');
-    }
-
-    private async _handleSendRequest(params: {text: string, excludeDirs?: string, historyCount?: number}) {
-        const { text, excludeDirs = "", historyCount = 5 } = params;
-
-        if (!this._openai || !this._currentConversation) {
+    private async _handleSendRequest(text: string, historyCount: number) {
+        if (!this._openai) {
             this._panel.webview.postMessage({
                 command: "updateStatus",
-                text: "API key not configured"
+                text: "API key not configured",
+            });
+            return;
+        }
+
+        if (!this._currentConversation) {
+            this._panel.webview.postMessage({
+                command: "updateStatus",
+                text: "Conversation error",
             });
             return;
         }
@@ -351,159 +331,273 @@ class DeepSeekPanel {
         if (!text) {
             this._panel.webview.postMessage({
                 command: "updateStatus",
-                text: "Please enter your question"
+                text: "Please enter your question",
             });
             return;
         }
 
         try {
-            // Add user message
-            const userMessage = {
-                role: 'user' as const,
+            // 添加用户消息
+            const userMessage: Message = {
+                id: `msg-${Date.now()}`,
+                role: "user",
                 content: text,
-                timestamp: Date.now()
+                timestamp: Date.now(),
             };
-            
+
             this._panel.webview.postMessage({
                 command: "addMessage",
-                ...userMessage
+                ...userMessage,
             });
 
             this._currentConversation.messages.push(userMessage);
+            this._log("User message added", { length: text.length });
 
-            // Prepare API request with markdown code blocks
+            // 准备API请求
             const formattedFiles = this._formatFiles(this._selectedFiles);
             const messages: OpenAI.ChatCompletionMessageParam[] = [
-                { 
-                    role: "system", 
-                    content: "You are an expert programming assistant. When providing code examples, always use markdown code blocks with language tags." 
+                {
+                    role: "system",
+                    content:
+                        "You are an expert programming assistant. When providing code examples, always use markdown code blocks with language tags.",
                 },
                 ...this._currentConversation.messages
                     .slice(-historyCount)
-                    .map(msg => ({
+                    .map((msg) => ({
                         role: msg.role,
-                        content: msg.content
+                        content: msg.content,
                     })),
                 {
                     role: "user",
-                    content: `${text}\n\n### Relevant Code Files:\n${formattedFiles}`
-                }
+                    content: `${text}\n\n### Relevant Code Files:\n${formattedFiles}`,
+                },
             ];
 
-            // Create assistant message placeholder
-            const assistantMessageId = `msg-${Date.now()}`;
+            this._log("Prepared API request", {
+                messageCount: messages.length,
+                filesCount: this._selectedFiles.length,
+            });
+
+            // 添加助手消息占位符
+            const assistantMessageId = `msg-${Date.now()}-${randomInt(1000)}`;
             this._panel.webview.postMessage({
                 command: "addMessage",
                 role: "assistant",
                 content: "",
                 timestamp: Date.now(),
-                id: assistantMessageId
+                id: assistantMessageId,
             });
 
-            // Stream response
-            const stream = await this._openai.chat.completions.create({
-                messages,
-                model: "deepseek-chat",
-                max_tokens: 2000,
-                stream: true
-            });
+            // 发送请求
+            this._currentRequest = new AbortController();
+            const stream = await this._openai.chat.completions.create(
+                {
+                    messages,
+                    model: "deepseek-chat",
+                    max_tokens: 2000,
+                    stream: true,
+                },
+                {
+                    signal: this._currentRequest.signal,
+                }
+            );
 
-            let fullResponse = '';
+            // 处理流式响应
+            let fullResponse = "";
             for await (const chunk of stream) {
                 const content = chunk.choices[0]?.delta?.content || "";
                 fullResponse += content;
-                
-                // Escape HTML but preserve code blocks
-                const escapedContent = fullResponse
-                    .replace(/&/g, "&amp;")
-                    .replace(/</g, "&lt;")
-                    .replace(/>/g, "&gt;");
-                
+
                 this._panel.webview.postMessage({
                     command: "updateMessage",
                     id: assistantMessageId,
-                    content: escapedContent,
-                    timestamp: Date.now()
+                    content: this._escapeHtml(fullResponse),
+                    timestamp: Date.now(),
                 });
             }
 
-            // Save assistant response
-            const assistantMessage = {
-                role: 'assistant' as const,
+            // 保存完整响应
+            const assistantMessage: Message = {
+                id: assistantMessageId,
+                role: "assistant",
                 content: fullResponse,
-                timestamp: Date.now()
+                timestamp: Date.now(),
             };
-            
+
             this._currentConversation.messages.push(assistantMessage);
             this._currentConversation.lastActive = Date.now();
-            this._currentConversation.preview = text.substring(0, 50) + (text.length > 50 ? '...' : '');
+            this._currentConversation.preview =
+                text.substring(0, 50) + (text.length > 50 ? "..." : "");
+
             this._saveConversations();
             this._saveFullConversation();
 
-            this._panel.webview.postMessage({
-                command: "updateConversation",
-                conversation: this._currentConversation,
-                history: this._getConversationHistory()
+            this.updateConversation();
+
+            this._log("API request completed", {
+                responseLength: fullResponse.length,
+                conversationId: this._currentConversation.id,
+            });
+        } catch (error) {
+            this._log("API request failed", {
+                error: this._errorToString(error),
             });
 
-        } catch (error) {
+            const errorMsg = this._currentRequest?.signal.aborted
+                ? "Request aborted"
+                : `Error: ${this._errorToString(error)}`;
+
             this._panel.webview.postMessage({
                 command: "updateStatus",
-                text: `Error: ${error instanceof Error ? error.message : String(error)}`
+                text: errorMsg,
             });
+        } finally {
+            this._currentRequest = null;
         }
+    }
+
+    // ===== 工具方法 =====
+    private _formatFiles(
+        files: Array<{ path: string; content: string }>
+    ): string {
+        return files
+            .map((f) => `### ${f.path}\n\`\`\`\n${f.content}\n\`\`\``)
+            .join("\n\n");
+    }
+
+    private _escapeHtml(unsafe: string): string {
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    private _generateMarkdownPath(conversationId: string): string {
+        const workspaceRoot = vscode.workspace.rootPath;
+        if (!workspaceRoot) {
+            this._log("No workspace root found for markdown path");
+            return "";
+        }
+
+        const outputDir = path.join(workspaceRoot, ".deepseek");
+        if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+            this._log("Created output directory", { path: outputDir });
+        }
+
+        return path.join(outputDir, `${conversationId}.md`);
     }
 
     private _saveFullConversation() {
-        if (!this._currentConversation?.filePath) return;
-        
+        if (!this._currentConversation?.filePath) {
+            return;
+        }
+
         const content = this._currentConversation.messages
-            .map(msg => {
+            .map((msg) => {
                 const role = msg.role === "user" ? "User" : "DeepSeek";
-                return `## [${format(new Date(msg.timestamp), 'yyyy-MM-dd HH:mm:ss')}] ${role}\n${msg.content}\n`;
+                return `## [${dayjs(msg.timestamp).format(
+                    "YYYY-MM-DD HH:mm:ss"
+                )}] ${role}\n${msg.content}\n`;
             })
             .join("\n---\n\n");
-        
+
         try {
             fs.writeFileSync(this._currentConversation.filePath, content);
+            this._log("Saved conversation", {
+                path: this._currentConversation.filePath,
+            });
         } catch (error) {
-            console.error('Failed to save conversation:', error);
+            this._log("Failed to save conversation", {
+                error: this._errorToString(error),
+                path: this._currentConversation.filePath,
+            });
         }
     }
 
-    private _updateWebview() {
-        // Get local resource paths
-        const htmlPath = vscode.Uri.joinPath(this._context.extensionUri, 'src', 'panel.html');
-        const cssPath = vscode.Uri.joinPath(this._context.extensionUri, 'src', 'panel.css');
-        const jsPath = vscode.Uri.joinPath(this._context.extensionUri, 'src', 'panel.js');
-
-        // Read file contents
-        let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
-        const css = this._panel.webview.asWebviewUri(cssPath);
-        const js = this._panel.webview.asWebviewUri(jsPath);
-
-        // Replace resource references
-        html = html.replace(
-            /<link rel="stylesheet" href="panel.css">/,
-            `<link rel="stylesheet" href="${css}">`
-        ).replace(
-            /<script src="panel.js"><\/script>/,
-            `<script src="${js}"></script>`
+    private _saveConversations() {
+        const conversationsToSave = this._conversations.filter(
+            (conv) =>
+                conv.messages.length > 0 ||
+                conv.id === this._currentConversation?.id
         );
-
-        this._panel.webview.html = html;
-
-        // Send initial data
-        this._panel.webview.postMessage({
-            command: 'updateConversation',
-            conversation: this._currentConversation,
-            history: this._getConversationHistory()
-        });
+        this._context.workspaceState.update(
+            "conversations",
+            conversationsToSave
+        );
+        this._log("Saved conversations", { count: conversationsToSave.length });
     }
 
+    private _getConversationHistory() {
+        // 使用preview减少前后端通信数据量
+        return this._conversations.map((c) => ({
+            id: c.id,
+            createdAt: c.createdAt,
+            lastActive: c.lastActive,
+            preview:
+                c.messages.length > 0
+                    ? c.messages[0].content.substring(0, 50) +
+                      (c.messages[0].content.length > 50 ? "..." : "")
+                    : "New conversation",
+        }));
+    }
+
+    private async _collectFiles(
+        fileTypes: string[],
+        excludeDirs: string
+    ): Promise<Array<{ path: string; content: string }>> {
+        const pattern = `**/*.{${fileTypes.join(",")}}`;
+        const excludePattern = excludeDirs
+            .split(" ")
+            .filter(Boolean)
+            .map((dir) => `**/${dir}/**`)
+            .join(",");
+
+        this._log("Searching for files", { pattern, excludePattern });
+        const uris = await vscode.workspace.findFiles(
+            pattern,
+            `{${excludePattern},**/node_modules/**}`
+        );
+
+        this._log("Found files", { count: uris.length });
+        const files = await Promise.all(
+            uris.map(async (uri) => ({
+                path: vscode.workspace.asRelativePath(uri),
+                content: (await vscode.workspace.fs.readFile(uri)).toString(),
+            }))
+        );
+
+        return files.sort((a, b) =>
+            a.path.localeCompare(b.path, undefined, { sensitivity: "base" })
+        );
+    }
+
+    // ===== 日志系统 =====
+    private _log(message: string, data?: any) {
+        const timestamp = new Date().toISOString();
+        const logMessage = `[${timestamp}] ${message}`;
+
+        console.log(logMessage, data || "");
+    }
+
+    private _errorToString(error: unknown): string {
+        return error instanceof Error ? error.message : String(error);
+    }
+
+    private _handleFrontendLog(message: any) {
+        const level = message.level || "INFO";
+        const logMessage = `[FRONTEND ${level}] ${message.message}`;
+
+        console.log(logMessage, message.data || "");
+    }
+
+    // ===== 生命周期管理 =====
     public dispose() {
+        this._log("Disposing panel");
         DeepSeekPanel.instance = undefined;
-        this._panel.dispose();
+
         while (this._disposables.length) {
             const disposable = this._disposables.pop();
             if (disposable) {
@@ -511,4 +605,65 @@ class DeepSeekPanel {
             }
         }
     }
+
+    private _updateWebview() {
+        const htmlPath = vscode.Uri.joinPath(
+            this._context.extensionUri,
+            "src",
+            "panel.html"
+        );
+        const cssPath = vscode.Uri.joinPath(
+            this._context.extensionUri,
+            "src",
+            "panel.css"
+        );
+        const jsPath = vscode.Uri.joinPath(
+            this._context.extensionUri,
+            "src",
+            "panel.js"
+        );
+
+        const html = fs
+            .readFileSync(htmlPath.fsPath, "utf8")
+            .replace(
+                "panel.css",
+                this._panel.webview.asWebviewUri(cssPath).toString()
+            )
+            .replace(
+                "panel.js",
+                this._panel.webview.asWebviewUri(jsPath).toString()
+            );
+
+        this._panel.webview.html = html;
+        this._log("Webview content updated");
+    }
+}
+
+// ===== 扩展激活 =====
+export function activate(context: vscode.ExtensionContext) {
+    console.log("DeepSeek extension activated");
+
+    // 创建输出通道
+    const outputChannel = vscode.window.createOutputChannel("DeepSeek");
+    context.globalState.update("outputChannel", outputChannel);
+
+    // 注册命令
+    context.subscriptions.push(
+        vscode.commands.registerCommand("deepseek.analyze", () => {
+            DeepSeekPanel.createOrShow(context);
+        })
+    );
+
+    // 监听配置变化
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((e) => {
+            if (e.affectsConfiguration("deepseek.ds_key")) {
+                DeepSeekPanel.createOrShow(context);
+            }
+        })
+    );
+}
+
+export function deactivate() {
+    console.log("DeepSeek extension deactivated");
 }

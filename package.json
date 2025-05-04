@@ -1,51 +1,51 @@
 {
-  "name": "deepseek-vscode",
-  "displayName": "DeepSeek Helper",
-  "description": "VSCode extension for DeepSeek code analysis",
-  "version": "1.0.0",
-  "publisher": "nightcat",
-  "engines": {
-    "vscode": "^1.85.0"
-  },
-  "categories": [
-    "Programming Languages"
-  ],
-  "main": "./dist/extension.js",
-  "contributes": {
-    "commands": [
-      {
-        "command": "deepseek.analyze",
-        "title": "DeepSeek: Analyze"
-      }
+    "name": "deepseek-vscode",
+    "displayName": "DeepSeek Helper",
+    "description": "VSCode extension for DeepSeek code analysis",
+    "version": "1.0.0",
+    "publisher": "nightcat",
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Programming Languages"
     ],
-    "configuration": {
-      "title": "DeepSeek Helper",
-      "properties": {
-        "deepseek.ds_key": {
-          "type": "string",
-          "default": "",
-          "description": "Your DeepSeek API Key (get it from https://platform.deepseek.com)",
-          "scope": "application"
+    "main": "./dist/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "deepseek.analyze",
+                "title": "DeepSeek: Analyze"
+            }
+        ],
+        "configuration": {
+            "title": "DeepSeek Helper",
+            "properties": {
+                "deepseek.ds_key": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Your DeepSeek API Key (get it from https://platform.deepseek.com)",
+                    "scope": "application"
+                }
+            }
         }
-      }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile",
+        "postinstall": "npm run compile"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.19",
+        "@types/vscode": "^1.85.0",
+        "axios": "^1.9.0",
+        "typescript": "^5.3.3"
+    },
+    "dependencies": {
+        "dayjs": "^1.11.13",
+        "openai": "^4.97.0",
+        "uuid": "^11.1.0"
     }
-  },
-  "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile",
-    "postinstall": "npm run compile"
-  },
-  "devDependencies": {
-    "@types/node": "^20.11.19",
-    "@types/vscode": "^1.85.0",
-    "axios": "^1.9.0",
-    "date-fns": "^4.1.0",
-    "typescript": "^5.3.3"
-  },
-  "dependencies": {
-    "openai": "^4.97.0",
-    "uuid": "^11.1.0"
-  }
 }
