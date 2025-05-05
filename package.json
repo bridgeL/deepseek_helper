@@ -34,8 +34,7 @@
         "vscode:prepublish": "npm run compile",
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
-        "pretest": "npm run compile",
-        "postinstall": "npm run compile"
+        "lint": "eslint"
     },
     "devDependencies": {
         "@types/node": "^20.11.19",
@@ -45,7 +44,10 @@
     },
     "dependencies": {
         "dayjs": "^1.11.13",
-        "openai": "^4.97.0",
-        "uuid": "^11.1.0"
+        "openai": "^4.97.0"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/bridgeL/deepseek_helper.git"
     }
 }

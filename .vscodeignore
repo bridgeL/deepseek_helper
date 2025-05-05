@@ -1,0 +1,6 @@
+.vscode/**
+.deepseek/**
+.gitignore
+tsconfig.json
+node_modules/.bin/**
+node_modules/typescript/**

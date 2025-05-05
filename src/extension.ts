@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
 import dayjs from "dayjs";
-import { v4 as uuidv4 } from "uuid";
 import OpenAI from "openai";
 import { randomInt } from "crypto";
 
@@ -120,7 +119,7 @@ export class DeepSeekPanel {
                 conv.id === this._currentConversation?.id
         );
 
-        const conversationId = uuidv4();
+        const conversationId = `conv-${Date.now()}-${randomInt(1000)}`;
         this._currentConversation = {
             id: conversationId,
             createdAt: Date.now(),
@@ -364,7 +363,7 @@ export class DeepSeekPanel {
                 {
                     role: "system",
                     content:
-                        "You are an expert programming assistant. When providing code examples, always use markdown code blocks with language tags.",
+                        "You are an expert programming assistant. When providing code examples, always use markdown code blocks with language tags. ",
                 },
                 ...(historyCount > 0
                     ? this._currentConversation.messages
@@ -374,6 +373,11 @@ export class DeepSeekPanel {
                               content: msg.content,
                           }))
                     : []),
+                {
+                    role: "system",
+                    content:
+                        "Words above are the previous conversation records. Answer user's newest question below. Please pay attention to user's language and provide clear explanations by its language.",
+                },
                 {
                     role: "user",
                     content: `${text}\n\n### Relevant Code Files:\n${formattedFiles}`,
@@ -401,7 +405,7 @@ export class DeepSeekPanel {
                 {
                     messages,
                     model: "deepseek-chat",
-                    max_tokens: 2000,
+                    max_tokens: 8000,
                     stream: true,
                 },
                 {
@@ -553,22 +557,41 @@ export class DeepSeekPanel {
 
     private async _collectFiles(
         fileTypes: string[],
-        excludeDirs: string
+        excludePatterns: string
     ): Promise<Array<{ path: string; content: string }>> {
         const pattern = `**/*.{${fileTypes.join(",")}}`;
-        const excludePattern = excludeDirs
-            .split(" ")
-            .filter(Boolean)
+
+        // Split exclude patterns by space and filter out empty strings
+        const excludeItems = excludePatterns.split(" ").filter(Boolean);
+
+        // Separate directories and files
+        const excludeDirs = excludeItems.filter((item) => !item.includes("."));
+        const excludeFiles = excludeItems.filter((item) => item.includes("."));
+
+        // Create exclude patterns
+        const dirExcludePattern = excludeDirs
             .map((dir) => `**/${dir}/**`)
             .join(",");
+        const fileExcludePattern = excludeFiles
+            .map((file) => `**/${file}`)
+            .join(",");
 
-        this._log("Searching for files", { pattern, excludePattern });
+        // Combine all exclude patterns
+        const fullExcludePattern = [
+            dirExcludePattern,
+            fileExcludePattern,
+            "**/node_modules/**",
+        ]
+            .filter(Boolean)
+            .join(",");
+
+        this._log("Searching for files", { pattern, fullExcludePattern });
         const uris = await vscode.workspace.findFiles(
             pattern,
-            `{${excludePattern},**/node_modules/**}`
+            `{${fullExcludePattern}}`
         );
-
         this._log("Found files", { count: uris.length });
+
         const files = await Promise.all(
             uris.map(async (uri) => ({
                 path: vscode.workspace.asRelativePath(uri),
