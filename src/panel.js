@@ -77,6 +77,11 @@ function handleToggleHistory() {
 
 // 新建对话处理
 function handleNewConversation() {
+    if (isCurrentConversationEmpty()) {
+        // 如果当前已经是空对话，就不需要新建
+        updateStatus("Current conversation is already empty");
+        return;
+    }
     elements.vscode.postMessage({ command: "newConversation" });
 }
 
@@ -197,14 +202,12 @@ function updateMessage(message) {
     if (!messageEl) return;
 
     const contentEl = messageEl.querySelector(".message-content");
-    if (contentEl) {
-        contentEl.innerHTML = renderContent(message.content, false);
-        // contentEl.innerHTML = renderCodeBlocks(escapeHtml(message.content));
-    }
 
-    const timeEl = messageEl.querySelector(".message-time");
-    if (timeEl) {
-        timeEl.textContent = formatTime(message.timestamp);
+    if (contentEl) {
+        // 清空现有内容
+        contentEl.innerHTML = "";
+        // 添加新的内容
+        contentEl.appendChild(renderContent(message.content, false));
     }
 
     // elements.responseContainer.scrollTop =
@@ -215,13 +218,29 @@ function updateMessage(message) {
 function updateConversationView(conversation, history) {
     clearResponseContainer();
 
-    if (conversation?.messages) {
+    if (conversation?.messages && conversation.messages.length > 0) {
         conversation.messages.forEach((msg) => {
             addMessage(msg);
         });
+    } else {
+        showBlankConversation();
     }
 
     updateHistoryPanel(history, conversation?.id);
+}
+
+// 检查当前对话是否为空
+function isCurrentConversationEmpty() {
+    const messages = document.querySelectorAll(".message-container");
+    return messages.length === 0;
+}
+
+// 显示空白对话提示
+function showBlankConversation() {
+    const blankDiv = document.createElement("div");
+    blankDiv.className = "blank-conversation";
+    blankDiv.textContent = "Blank Conversation";
+    elements.responseContainer.appendChild(blankDiv);
 }
 
 // 清空消息容器
@@ -288,15 +307,26 @@ function createMessageElement(role, content, timestamp, id = "") {
 
     const contentDiv = document.createElement("div");
     contentDiv.className = "message-content";
-    contentDiv.innerHTML = renderContent(content, true);
-    // renderCodeBlocks(escapeHtml(content));
+    contentDiv.appendChild(renderContent(content, false));
 
     const timeDiv = document.createElement("div");
     timeDiv.className = "message-time";
     timeDiv.textContent = formatTime(timestamp);
 
+    // 添加复制按钮
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "copy-btn";
+    copyBtn.textContent = "Copy";
+    copyBtn.addEventListener("click", () => {
+        navigator.clipboard.writeText(content).catch((err) => {
+            console.error("Failed to copy: ", err);
+        });
+        updateStatus("Copied to clipboard!");
+    });
+
     messageDiv.appendChild(contentDiv);
     messageDiv.appendChild(timeDiv);
+    messageDiv.appendChild(copyBtn); // 添加复制按钮
     container.appendChild(messageDiv);
 
     return container;
@@ -310,19 +340,15 @@ function parseMixedContent(content, prefer_code = false) {
 
     while (index < length) {
         if (state === "text") {
-            // 在text状态下查找代码块起始标记
             const blockStart = content.indexOf("```", index);
             if (blockStart !== -1) {
-                // 处理text到代码块之间的内容（可能包含行内代码）
                 const textContent = content.slice(index, blockStart);
                 if (textContent) {
                     result.push(...parseTextSnip(textContent, prefer_code));
                 }
-                // 切换到code状态
                 state = "code";
                 index = blockStart + 3; // 跳过```
             } else {
-                // 没有更多代码块，处理剩余文本
                 const textContent = content.slice(index);
                 if (textContent) {
                     result.push(...parseTextSnip(textContent, prefer_code));
@@ -330,21 +356,25 @@ function parseMixedContent(content, prefer_code = false) {
                 break;
             }
         } else if (state === "code") {
-            // 在code状态下查找代码块结束标记
             const blockEnd = content.indexOf("```", index);
             if (blockEnd !== -1) {
-                // 提取代码块内容
                 const codeContent = content.slice(index, blockEnd).trim();
-                // 提取语言（第一行）
+
+                // 修改后的语言检测逻辑
+                let language = "";
+                let pureCode = codeContent;
                 const firstNewLine = codeContent.indexOf("\n");
-                const language =
-                    firstNewLine !== -1
-                        ? codeContent.slice(0, firstNewLine).trim()
-                        : "";
-                const pureCode =
-                    firstNewLine !== -1
-                        ? codeContent.slice(firstNewLine + 1)
-                        : codeContent;
+
+                if (firstNewLine !== -1) {
+                    const potentialLang = codeContent
+                        .slice(0, firstNewLine)
+                        .trim();
+                    // 只有当第一行看起来像语言标记时才视为语言
+                    if (/^[a-zA-Z0-9+#-]+$/.test(potentialLang)) {
+                        language = potentialLang;
+                        pureCode = codeContent.slice(firstNewLine + 1);
+                    }
+                }
 
                 result.push({
                     type: "code",
@@ -352,23 +382,24 @@ function parseMixedContent(content, prefer_code = false) {
                     content: pureCode.trim(),
                     closed: true,
                 });
-                // 切换回text状态
                 state = "text";
-                index = blockEnd + 3; // 跳过```
+                index = blockEnd + 3;
             } else {
-                // 未闭合的代码块
                 const codeContent = content.slice(index).trim();
                 if (prefer_code) {
-                    // 提取语言（第一行）
+                    let language = "";
+                    let pureCode = codeContent;
                     const firstNewLine = codeContent.indexOf("\n");
-                    const language =
-                        firstNewLine !== -1
-                            ? codeContent.slice(0, firstNewLine).trim()
-                            : "";
-                    const pureCode =
-                        firstNewLine !== -1
-                            ? codeContent.slice(firstNewLine + 1)
-                            : codeContent;
+
+                    if (firstNewLine !== -1) {
+                        const potentialLang = codeContent
+                            .slice(0, firstNewLine)
+                            .trim();
+                        if (/^[a-zA-Z0-9+#-]+$/.test(potentialLang)) {
+                            language = potentialLang;
+                            pureCode = codeContent.slice(firstNewLine + 1);
+                        }
+                    }
 
                     result.push({
                         type: "code",
@@ -377,10 +408,9 @@ function parseMixedContent(content, prefer_code = false) {
                         closed: false,
                     });
                 } else {
-                    // 视为普通文本
                     result.push({
                         type: "text",
-                        content: "```" + codeContent, // 补回开头的```
+                        content: "```" + codeContent,
                     });
                 }
                 break;
@@ -462,35 +492,64 @@ function parseTextSnip(content, prefer_code = false) {
     return result;
 }
 
-// 工具函数: 渲染代码块
+// 工具函数: 渲染内容为DOM元素
 function renderContent(content, need_escape) {
+    const container = document.createElement("div");
     const parsedContent = parseMixedContent(content, true);
-    return parsedContent
-        .map((item) => {
-            switch (item.type) {
-                case "code":
-                    const content = need_escape
-                        ? escapeHtml(item.content)
-                        : item.content;
-                    const langTag = item.language
-                        ? `<span class="lang-tag">${item.language}</span>`
-                        : "";
-                    return `\n<div class="code-block"><pre>${content}</pre>${langTag}</div>\n`;
 
-                case "snip":
-                    const content2 = need_escape
-                        ? escapeHtml(item.content)
-                        : item.content;
-                    return ` <code>${content2}</code> `;
+    parsedContent.forEach((item) => {
+        switch (item.type) {
+            case "code":
+                const codeBlock = document.createElement("div");
+                codeBlock.className = "code-block";
 
-                default:
-                    return need_escape
-                        ? escapeHtml(item.content)
-                        : item.content;
-            }
-        })
-        .join(""); // 用换行符连接各个部分
+                const pre = document.createElement("pre");
+                pre.textContent = need_escape
+                    ? escapeHtml(item.content)
+                    : item.content;
+
+                // 添加语言标签
+                const langTag = document.createElement("span");
+                langTag.className = "lang-tag";
+                langTag.textContent = item.language
+                    ? item.language
+                    : "plain text";
+                codeBlock.appendChild(langTag);
+
+                // 添加复制按钮
+                const copyBtn = document.createElement("button");
+                copyBtn.className = "copy-btn";
+                copyBtn.textContent = "Copy";
+                copyBtn.addEventListener("click", () => {
+                    navigator.clipboard.writeText(item.content).catch((err) => {
+                        console.error("Failed to copy: ", err);
+                    });
+                });
+
+                codeBlock.appendChild(pre);
+                codeBlock.appendChild(copyBtn);
+                container.appendChild(codeBlock);
+                break;
+
+            case "snip":
+                const code = document.createElement("code");
+                code.textContent = need_escape
+                    ? escapeHtml(item.content)
+                    : item.content;
+                container.appendChild(code);
+                break;
+
+            default:
+                const textNode = document.createTextNode(
+                    need_escape ? escapeHtml(item.content) : item.content
+                );
+                container.appendChild(textNode);
+        }
+    });
+
+    return container;
 }
+
 
 // 工具函数: HTML转义
 function escapeHtml(unsafe) {

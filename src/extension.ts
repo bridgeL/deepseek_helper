@@ -363,7 +363,7 @@ export class DeepSeekPanel {
                 {
                     role: "system",
                     content:
-                        "You are an expert programming assistant. When providing code examples, always use markdown code blocks with language tags. ",
+                        "You are an expert programming assistant. When providing code examples, always use markdown code blocks with language tags. Always respond in the same language as the user's question.",
                 },
                 ...(historyCount > 0
                     ? this._currentConversation.messages
@@ -376,14 +376,14 @@ export class DeepSeekPanel {
                 {
                     role: "system",
                     content:
-                        "Words above are the previous conversation records. Answer user's newest question below. Please pay attention to user's language and provide clear explanations by its language.",
+                        "Words above are the previous conversation records. Answer user's newest question below. You MUST respond in the exact same language as the user's question.",
                 },
                 {
                     role: "user",
                     content: `${text}\n\n### Relevant Code Files:\n${formattedFiles}`,
                 },
             ];
-
+            
             this._log("Prepared API request", {
                 messageCount: messages.length,
                 filesCount: this._selectedFiles.length,
@@ -422,7 +422,7 @@ export class DeepSeekPanel {
                 this._panel.webview.postMessage({
                     command: "updateMessage",
                     id: assistantMessageId,
-                    content: this._escapeHtml(fullResponse),
+                    content: fullResponse,
                     timestamp: Date.now(),
                 });
             }
@@ -474,15 +474,6 @@ export class DeepSeekPanel {
         return files
             .map((f) => `### ${f.path}\n\`\`\`\n${f.content}\n\`\`\``)
             .join("\n\n");
-    }
-
-    private _escapeHtml(unsafe: string): string {
-        return unsafe
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
     }
 
     private _generateMarkdownPath(conversationId: string): string {
