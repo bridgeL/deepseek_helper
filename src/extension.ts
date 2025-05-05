@@ -363,7 +363,11 @@ export class DeepSeekPanel {
                 {
                     role: "system",
                     content:
-                        "You are an expert programming assistant. When providing code examples, always use markdown code blocks with language tags. Always respond in the same language as the user's question.",
+                        "You are an expert programming assistant. When providing code examples, always use markdown code blocks with language tags. Always respond in the same language as the user's question. Answer user's newest question below. You MUST respond in the exact same language as the user's question.",
+                },
+                {
+                    role: "user",
+                    content: `### Relevant Code Files:\n${formattedFiles}`,
                 },
                 ...(historyCount > 0
                     ? this._currentConversation.messages
@@ -374,16 +378,11 @@ export class DeepSeekPanel {
                           }))
                     : []),
                 {
-                    role: "system",
-                    content:
-                        "Words above are the previous conversation records. Answer user's newest question below. You MUST respond in the exact same language as the user's question.",
-                },
-                {
                     role: "user",
-                    content: `${text}\n\n### Relevant Code Files:\n${formattedFiles}`,
+                    content: text,
                 },
             ];
-            
+
             this._log("Prepared API request", {
                 messageCount: messages.length,
                 filesCount: this._selectedFiles.length,
