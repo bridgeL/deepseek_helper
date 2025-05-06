@@ -243,6 +243,11 @@ export class DeepSeekPanel {
             return;
         }
 
+        // 保存当前请求的已接收内容
+        this._saveConversations(); // 确保保存当前对话
+        this._saveFullConversation(); // 确保保存已接收的内容
+        this.updateConversation(); // 更新当前对话
+
         // 取消当前请求
         if (this._currentRequest) {
             this._currentRequest.abort();
@@ -363,7 +368,7 @@ export class DeepSeekPanel {
                 {
                     role: "system",
                     content:
-                        "You are an expert programming assistant. When providing code examples, always use markdown code blocks with language tags. Always respond in the same language as the user's question. Answer user's newest question below. You MUST respond in the exact same language as the user's question.",
+                        "You are an expert programming assistant. When providing code examples, always use markdown code blocks with language tags.",
                 },
                 {
                     role: "user",
@@ -413,24 +418,10 @@ export class DeepSeekPanel {
             );
 
             // 处理流式响应
-            let fullResponse = "";
-            for await (const chunk of stream) {
-                const content = chunk.choices[0]?.delta?.content || "";
-                fullResponse += content;
-
-                this._panel.webview.postMessage({
-                    command: "updateMessage",
-                    id: assistantMessageId,
-                    content: fullResponse,
-                    timestamp: Date.now(),
-                });
-            }
-
-            // 保存完整响应
             const assistantMessage: Message = {
                 id: assistantMessageId,
                 role: "assistant",
-                content: fullResponse,
+                content: "",
                 timestamp: Date.now(),
             };
 
@@ -444,8 +435,38 @@ export class DeepSeekPanel {
 
             this.updateConversation();
 
+            for await (const chunk of stream) {
+                // console.log("Received chunk", chunk);
+                const content = chunk.choices[0]?.delta?.content || "";
+                assistantMessage.content += content;
+
+                this._panel.webview.postMessage({
+                    command: "updateMessage",
+                    id: assistantMessageId,
+                    content: assistantMessage.content,
+                    timestamp: Date.now(),
+                });
+
+                if (chunk.usage) {
+                    this._panel.webview.postMessage({
+                        command: "updateUsage",
+                        usage: chunk.usage,
+                    });
+                }
+            }
+
+            // 保存完整响应
+            this._currentConversation.lastActive = Date.now();
+            this._currentConversation.preview =
+                text.substring(0, 50) + (text.length > 50 ? "..." : "");
+
+            this._saveConversations();
+            this._saveFullConversation();
+
+            this.updateConversation();
+
             this._log("API request completed", {
-                responseLength: fullResponse.length,
+                responseLength: assistantMessage.content.length,
                 conversationId: this._currentConversation.id,
             });
         } catch (error) {

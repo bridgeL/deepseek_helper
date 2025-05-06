@@ -28,6 +28,7 @@ const elements = {
     resizeHandle: document.querySelector(".resize-handle"),
     conversationHistory: document.getElementById("conversationHistory"),
     conversationList: document.getElementById("conversationList"),
+    usageEl: document.getElementById("token-usage"),
 };
 
 // 初始化应用
@@ -103,6 +104,8 @@ function handleSelectFiles() {
         fileTypes: fileTypes,
         excludeDirs: elements.excludeDirsInput.value.trim(),
     });
+
+    updateStatus("Files selected. Click 'Send Request' to proceed.");
 }
 
 // 估算令牌处理
@@ -154,6 +157,9 @@ function handleExtensionMessages(event) {
         case "updateConversation":
             updateConversationView(message.conversation, message.history);
             break;
+        case "updateUsage":
+            updateUsage(message.usage);
+            break;
         default:
             console.warn("Unknown message:", message);
     }
@@ -164,15 +170,56 @@ function updateStatus(text) {
     elements.statusEl.textContent = text;
 }
 
-// 更新文件列表
-function updateFileList(files) {
-    updateStatus("Files selected. Click 'Send Request' to proceed.");
-    elements.filesContainer.innerHTML = files
-        .map((file) => `<div class="file-item">${file}</div>`)
-        .join("");
-    elements.filesContainer.style.display = "block";
+// 更新使用情况
+function updateUsage(usage) {
+    const hit = usage.prompt_cache_hit_tokens;
+    const miss = usage.prompt_cache_miss_tokens;
+    const out = usage.completion_tokens;
+    const total = usage.total_tokens;
+    elements.usageEl.textContent = `Tokens used: ${total} | cache hit: ${hit}, miss: ${miss}, answer: ${out}`;
 }
 
+// 更新文件列表
+function updateFileList(files) {
+    elements.filesContainer.innerHTML = files
+        .map(
+            (file) => `
+            <div class="file-item">
+                <span>${file}</span>
+                <button class="file-delete-btn" data-file="${file}">×</button>
+            </div>
+        `
+        )
+        .join("");
+    elements.filesContainer.style.display = "block";
+
+    // 添加删除按钮事件监听
+    document.querySelectorAll(".file-delete-btn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const filePath = btn.dataset.file;
+
+            // 获取当前排除列表
+            let currentExcludes = elements.excludeDirsInput.value.trim();
+
+            // 如果文件路径包含空格，需要加上引号
+            const formattedPath = filePath.includes(" ")
+                ? `"${filePath}"`
+                : filePath;
+
+            // 添加到排除列表（如果尚未存在）
+            if (!currentExcludes.includes(formattedPath)) {
+                elements.excludeDirsInput.value = currentExcludes
+                    ? `${currentExcludes} ${formattedPath}`
+                    : formattedPath;
+
+                updateStatus(`Added to excludes: ${filePath}`);
+
+                handleSelectFiles();
+            }
+        });
+    });
+}
 // 显示令牌估算
 function showTokenEstimate(estimate) {
     elements.statusEl.textContent = estimate;
@@ -549,7 +596,6 @@ function renderContent(content, need_escape) {
 
     return container;
 }
-
 
 // 工具函数: HTML转义
 function escapeHtml(unsafe) {
